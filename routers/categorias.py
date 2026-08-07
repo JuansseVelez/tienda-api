@@ -1,48 +1,86 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
- 
+import seguridad
+
 router = APIRouter(prefix="/categorias", tags=["Categorias"])
- 
-class CategoriaEntrada(BaseModel): 
-	nombre: str
- 
+
+
+class CategoriaEntrada(BaseModel):
+    nombre: str
+
+
 categorias = [
-	{"id": 1, "nombre": "Perifericos"},
-	{"id": 2, "nombre": "Pantallas"},
-	{"id": 3, "nombre": "Audio"},
+    {"id": 1, "nombre": "Perifericos"},
+    {"id": 2, "nombre": "Pantallas"},
+    {"id": 3, "nombre": "Audio"},
 ]
- 
+
+
 # LISTAR (resuelto como ejemplo)
 @router.get("")
 def listar_categorias():
-	return categorias
- 
+    return categorias
+
+
 @router.get("/{categoria_id}")
 def obtener_categoria(categoria_id: int):
-	for categoria in categorias:
-		if categoria["id"] == categoria_id:
-			return categoria
-	raise HTTPException(status_code=404, detail="Categoria no encontrada")
+    for categoria in categorias:
+        if categoria["id"] == categoria_id:
+            return categoria
+    raise HTTPException(status_code=404, detail="Categoria no encontrada")
+
 
 @router.post("", status_code=201)
-def crear_categoria(datos: CategoriaEntrada):
-	nuevo_id = max((c["id"] for c in categorias), default=0) + 1
-	nuevo = {"id": nuevo_id, "nombre": datos.nombre}
-	categorias.append(nuevo)
-	return {"mensaje": "Categoria creada", "categoria": nuevo}
+def crear_categoria(
+    datos: CategoriaEntrada,
+    usuario: dict = Depends(seguridad.obtener_usuario_actual),
+):
+    nuevo_id = max((c["id"] for c in categorias), default=0) + 1
+
+    nuevo = {
+        "id": nuevo_id,
+        "nombre": datos.nombre,
+    }
+
+    categorias.append(nuevo)
+
+    return {
+        "mensaje": "Categoria creada",
+        "categoria": nuevo,
+        "creado_por": usuario["username"],
+    }
+
 
 @router.put("/{categoria_id}")
-def actualizar_categoria(categoria_id: int, datos: CategoriaEntrada):
-	for categoria in categorias:
-		if categoria["id"] == categoria_id:
-			categoria["nombre"] = datos.nombre
-			return {"mensaje": "Categoria actualizada", "categoria": categoria}
-	raise HTTPException(status_code=404, detail="Categoria no encontrada")
+def actualizar_categoria(
+    categoria_id: int,
+    datos: CategoriaEntrada,
+    usuario: dict = Depends(seguridad.obtener_usuario_actual),
+):
+    for categoria in categorias:
+        if categoria["id"] == categoria_id:
+            categoria["nombre"] = datos.nombre
+            return {
+                "mensaje": "Categoria actualizada",
+                "categoria": categoria,
+                "actualizado_por": usuario["username"],
+            }
+
+    raise HTTPException(status_code=404, detail="Categoria no encontrada")
+
 
 @router.delete("/{categoria_id}")
-def eliminar_categoria(categoria_id: int):
-	for categoria in categorias:
-		if categoria["id"] == categoria_id:
-			categorias.remove(categoria)
-			return {"mensaje": "Categoria eliminada", "categoria": categoria}
-	raise HTTPException(status_code=404, detail="Categoria no encontrada")
+def eliminar_categoria(
+    categoria_id: int,
+    admin: dict = Depends(seguridad.requerir_admin),
+):
+    for categoria in categorias:
+        if categoria["id"] == categoria_id:
+            categorias.remove(categoria)
+            return {
+                "mensaje": "Categoria eliminada",
+                "categoria": categoria,
+                "eliminado_por": admin["username"],
+            }
+
+    raise HTTPException(status_code=404, detail="Categoria no encontrada")
