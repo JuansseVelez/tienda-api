@@ -15,6 +15,7 @@ La aplicación implementa un CRUD para productos y categorías, además de un si
 - Bcrypt
 - PyJWT
 - python-multipart
+- SQLite3
 
 ---
 
@@ -70,6 +71,21 @@ En el segundo trabajo se agregó seguridad a la API mediante autenticación con 
 | POST | Usuario autenticado |
 | PUT | Usuario autenticado |
 | DELETE | Solo administrador |
+
+---
+
+# Trabajo 3 - Persistencia con SQLite3
+
+En esta guía se reemplazó el almacenamiento en memoria por una base de datos real usando SQLite3, para que los datos no se pierdan al reiniciar el servidor.
+
+Cambios principales:
+- Se creó `database.py` con la conexión a la base de datos y la creación de las tablas.
+- Los routers de productos, categorías y autenticación ahora hacen consultas SQL parametrizadas en lugar de manejar listas.
+- Se agregó la relación entre productos y categorías mediante llave foránea (`categoria_id`).
+- Al eliminar una categoría, se valida que no tenga productos asociados.
+- Se agregó el endpoint `GET /categorias/{id}/productos`, que devuelve una categoría junto con sus productos usando una consulta con JOIN.
+
+La base de datos (`tienda-api.db`) se genera automáticamente al iniciar la aplicación y no se sube al repositorio (ver `.gitignore`).
 
 ---
 
@@ -194,6 +210,8 @@ Para utilizar los endpoints protegidos:
 5. Ya se podrán consumir los endpoints protegidos.
 
 ---
+
+
 
 # Autor
 
