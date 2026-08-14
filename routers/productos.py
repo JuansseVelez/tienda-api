@@ -1,72 +1,64 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 import seguridad
+import database
 
-# El router agrupa los endpoints de productos.
 router = APIRouter(prefix="/productos", tags=["Productos"])
 
 
-# Modelo de entrada (sin id: lo asigna el servidor)
 class ProductoEntrada(BaseModel):
     nombre: str
     precio: float
-    categoria: str
+    categoria_id: int
 
 
-# "Base de datos" en memoria
-productos = [
-    {
-        "id": 1,
-        "nombre": "Teclado mecanico",
-        "precio": 120000,
-        "categoria": "Perifericos",
-    },
-    {
-        "id": 2,
-        "nombre": "Mouse gamer",
-        "precio": 85000,
-        "categoria": "Perifericos",
-    },
-    {
-        "id": 3,
-        "nombre": "Monitor 24",
-        "precio": 650000,
-        "categoria": "Pantallas",
-    },
-]
-
-
-# READ - listar todos
 @router.get("")
 def listar_productos():
-    return productos
+    conexion = database.obtener_conexion()
+    cursor = conexion.cursor()
+    cursor.execute("SELECT * FROM productos")
+    filas = cursor.fetchall()
+    conexion.close()
+    return [dict(fila) for fila in filas]
 
 
-# READ - obtener uno
 @router.get("/{producto_id}")
 def obtener_producto(producto_id: int):
-    for producto in productos:
-        if producto["id"] == producto_id:
-            return producto
-    raise HTTPException(status_code=404, detail="Producto no encontrado")
+    conexion = database.obtener_conexion()
+    cursor = conexion.cursor()
+    cursor.execute("SELECT * FROM productos WHERE id = ?", (producto_id,))
+    producto = cursor.fetchone()
+    conexion.close()
+
+    if producto is None:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    return dict(producto)
 
 
-# CREATE - requiere estar autenticado
 @router.post("", status_code=201)
 def crear_producto(
     datos: ProductoEntrada,
     usuario: dict = Depends(seguridad.obtener_usuario_actual),
 ):
-    nuevo_id = max((p["id"] for p in productos), default=0) + 1
+    conexion = database.obtener_conexion()
+    cursor = conexion.cursor()
 
-    nuevo = {
-        "id": nuevo_id,
-        "nombre": datos.nombre,
-        "precio": datos.precio,
-        "categoria": datos.categoria,
-    }
+    cursor.execute("SELECT id FROM categorias WHERE id = ?", (datos.categoria_id,))
+    if cursor.fetchone() is None:
+        conexion.close()
+        raise HTTPException(status_code=400, detail="La categoria indicada no existe")
 
-    productos.append(nuevo)
+    cursor.execute(
+        "INSERT INTO productos (nombre, precio, categoria_id) VALUES (?, ?, ?)",
+        (datos.nombre, datos.precio, datos.categoria_id),
+    )
+    conexion.commit()
+    nuevo_id = cursor.lastrowid
+
+    cursor.execute("SELECT * FROM productos WHERE id = ?", (nuevo_id,))
+    nuevo = dict(cursor.fetchone())
+    conexion.close()
 
     return {
         "mensaje": "Producto creado",
@@ -75,40 +67,57 @@ def crear_producto(
     }
 
 
-# UPDATE
 @router.put("/{producto_id}")
 def actualizar_producto(
     producto_id: int,
     datos: ProductoEntrada,
     usuario: dict = Depends(seguridad.obtener_usuario_actual),
 ):
-    for producto in productos:
-        if producto["id"] == producto_id:
-            producto["nombre"] = datos.nombre
-            producto["precio"] = datos.precio
-            producto["categoria"] = datos.categoria
-            return {
-                "mensaje": "Producto actualizado",
-                "producto": producto,
-                "actualizado_por": usuario["username"],
-            }
+    conexion = database.obtener_conexion()
+    cursor = conexion.cursor()
 
-    raise HTTPException(status_code=404, detail="Producto no encontrado")
+    cursor.execute(
+        "UPDATE productos SET nombre = ?, precio = ?, categoria_id = ? WHERE id = ?",
+        (datos.nombre, datos.precio, datos.categoria_id, producto_id),
+    )
+    conexion.commit()
+
+    if cursor.rowcount == 0:
+        conexion.close()
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    cursor.execute("SELECT * FROM productos WHERE id = ?", (producto_id,))
+    actualizado = dict(cursor.fetchone())
+    conexion.close()
+
+    return {
+        "mensaje": "Producto actualizado",
+        "producto": actualizado,
+        "actualizado_por": usuario["username"],
+    }
 
 
-# DELETE - requiere rol admin
 @router.delete("/{producto_id}")
 def eliminar_producto(
     producto_id: int,
     admin: dict = Depends(seguridad.requerir_admin),
 ):
-    for producto in productos:
-        if producto["id"] == producto_id:
-            productos.remove(producto)
-            return {
-                "mensaje": "Producto eliminado",
-                "producto": producto,
-                "eliminado_por": admin["username"],
-            }
+    conexion = database.obtener_conexion()
+    cursor = conexion.cursor()
 
-    raise HTTPException(status_code=404, detail="Producto no encontrado")
+    cursor.execute("SELECT * FROM productos WHERE id = ?", (producto_id,))
+    producto = cursor.fetchone()
+
+    if producto is None:
+        conexion.close()
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    cursor.execute("DELETE FROM productos WHERE id = ?", (producto_id,))
+    conexion.commit()
+    conexion.close()
+
+    return {
+        "mensaje": "Producto eliminado",
+        "producto": dict(producto),
+        "eliminado_por": admin["username"],
+    }
